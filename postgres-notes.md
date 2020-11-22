@@ -203,9 +203,27 @@ Updating data! `update temp_categories set title='peach' where pk = 14;`
 And of course, deleting data `delete from temp_categories where pk=10;`
 - If we want to delete all the data in the table, just use truncate. `truncate table temp_categories ;`
 
- 
+The select statement can be used to filter our results.
+- Using the like clause, we can find records with titles that start with a with `select * from categories where title like 'a%';` We can 
+also use this in a similar way to find all titles that end with e, for example.
+- Be careful, because like searches are case-sensitive!
 
-    
+- The `coalesce` function takes two or more parameters returns the first value that is not null. So `select coalesce(NULL,'test');` 
+will return test because the first arg is null, and test is not null. 
+- Now for the expression `select description,coalesce(description,'No description') from categories order by 1;` which will return 2 columns,
+the first will be the description in the db, then the coalesce function will be the description if it is not null, otherwise it will 
+show the string No Description because that is clearly not null. 
+- The distinct keyword is used to return only distinct values, such as `select distinct coalesce(description,'No description') as description from categories order by 1;` 
+
+Limit is used to limit the number of records returned by the query while offset skips a specific number of rows returned by the query, it is where to start. 
+- `elect * from categories order by pk limit 2;`
+- `select * from categories order by pk offset 1 limit 1;`
+
+A cool function of the limit function is we can create a new table based off a current one, limit 0 and just keep the data structure, no data!
+
+Subqueries are also very useful, such as `select pk,title,content,author,category from posts where category in (select pk from categories where title ='orange');` where
+the subquery is `select pk from categories where title ='orange'`
+
 
 
 
