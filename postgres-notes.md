@@ -238,7 +238,9 @@ If we want to perform a check on a partition when creating children, we can do `
 
 The check command does 2 things -> It prunes the data correctly and makes sure no incorrect data can get into the child tables! Pretty nifty. It also makes the constraint_exclusion feature in postgres possible. If we query `select * from part_tags where level = 1` we will only query the child table where check = 1. Also a big performance improver. 
 
-So we can go even further and create some a trigger, that will call a function whenever we insert into the parent table, that will correctly insert the data into the right child table. We create the function like `postgres_playground=> create or replace function insert_part_tags () returns trigger as
+So we can go even further and create some a trigger, that will call a function whenever we insert into the parent table, that will correctly insert the data into the right child table. We create the function like 
+```
+postgres_playground=> create or replace function insert_part_tags () returns trigger as
 postgres_playground-> $$
 postgres_playground$> begin
 postgres_playground$> if NEW.level = 0 then
@@ -251,12 +253,15 @@ postgres_playground$> end if;
 postgres_playground$> return null;
 postgres_playground$> end;
 postgres_playground$> $$
-postgres_playground-> language 'plpgsql';` and we can create the trigger with `create trigger insert_part_tags_trigger before insert on part_tags for each row execute procedure insert_part_tags();`
+postgres_playground-> language 'plpgsql';` and we can create the trigger with `create trigger insert_part_tags_trigger before insert on part_tags for each row execute procedure insert_part_tags();
+```
 
 The trigger will move the record into the child table and return null to the parent table, so no one record will be inserted in the parent table. Thanks inheritance! If we insert some data, then look at it with `select * from part_tags;` we will see all the records we inserted. Aren't they only supposed to be in the child tables? YES! However this query will take everything from the child tables. To see what's only in the parent table we can use `select * from only part_tags;` Notice the only part, so we only take from the table. To see the child tables, which only have access to their it's own table data and any children, so we can do `select * from part_tags_level_0;`.
 
 
-When we want to update an entry to stay within it's current table or delete an entry, we can simply do that from the parent table and it will be updated or removed properly from the specific partition. Now the problem comes into play when we update an entry that will cause it to need to switch which child table to be in. In order to do this, we need a new function, and triggers on each of our child tables, we can do this like `CREATE OR REPLACE FUNCTION update_part_tags() RETURNS TRIGGER AS
+When we want to update an entry to stay within it's current table or delete an entry, we can simply do that from the parent table and it will be updated or removed properly from the specific partition. Now the problem comes into play when we update an entry that will cause it to need to switch which child table to be in. In order to do this, we need a new function, and triggers on each of our child tables, we can do this like 
+```
+CREATE OR REPLACE FUNCTION update_part_tags() RETURNS TRIGGER AS
 $$
 BEGIN
  IF (NEW.level != OLD.level) THEN
@@ -269,6 +274,7 @@ $$
 LANGUAGE 'plpgsql';
 
 CREATE TRIGGER update_part_tags_trigger BEFORE UPDATE ON part_tags_level_0 FOR EACH ROW EXECUTE PROCEDURE update_part_tags();
-CREATE TRIGGER update_part_tags_trigger BEFORE UPDATE ON part_tags_level_1 FOR EACH ROW EXECUTE PROCEDURE update_part_tags();`
+CREATE TRIGGER update_part_tags_trigger BEFORE UPDATE ON part_tags_level_1 FOR EACH ROW EXECUTE PROCEDURE update_part_tags();
+```
 
 This shows how we can partition tables and data using table inheritance, lots of use cases.
