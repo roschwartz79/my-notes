@@ -278,3 +278,201 @@ CREATE TRIGGER update_part_tags_trigger BEFORE UPDATE ON part_tags_level_1 FOR E
 ```
 
 This shows how we can partition tables and data using table inheritance, lots of use cases.
+
+To drop a parent and its child tables, `drop table if exists part_tags cascade`
+
+### Declarative Partitioning
+We will start with how to perform list partitioning. We create a table using list partitioning 
+```
+CREATE TABLE part_tags (
+ pk INTEGER NOT NULL DEFAULT nextval('part_tags_pk_seq') , 
+ level INTEGER NOT NULL DEFAULT 0,
+ tag VARCHAR (255) NOT NULL,
+ primary key (pk,level)
+)
+PARTITION BY LIST (level);
+```
+It's important to understand that the field used to partition must be the primary key or be part of the pk. 
+
+Now we can make the child tables, similar to inheritance but different. 
+```
+CREATE TABLE part_tags_level_0 PARTITION OF part_tags FOR VALUES IN (0);
+CREATE TABLE part_tags_level_1 PARTITION OF part_tags FOR VALUES IN (1);
+```
+
+I'm also going to add indexes on the parrent and child tables usning the GIN method:
+`CREATE INDEX part_tags_tag on part_tags using GIN (tag gin_trgm_ops);` and make sure to create the extension `CREATE EXTENSION pg_trgm;`
+
+So try and insert some data and then query around in the DB for it! Notice how we have every entry in the parent table, but the partitions are separated out correctly. Let's start fresh and try Range partitioning. `drop table if exists part_tags cascade`
+
+### Range Partitioning
+Range partitioning is pretty self explanatory, we partiton based on a range. Here we will use a data range, something applicable to so many services. So let's create our parent table and child tables!
+
+```
+CREATE TABLE part_tags (
+     pk INTEGER NOT NULL DEFAULT nextval('part_tags_pk_seq'),
+     ins_date date not null default now()::date,
+     tag VARCHAR (255) NOT NULL,
+     level INTEGER NOT NULL DEFAULT 0,
+     primary key (pk,ins_date)
+)
+PARTITION BY RANGE (ins_date);
+
+CREATE TABLE part_tags_date_01_2020 PARTITION OF part_tags FOR VALUES FROM ('2020-01-01') TO ('2020-01-31');
+CREATE TABLE part_tags_date_02_2020 PARTITION OF part_tags FOR VALUES FROM ('2020-02-01') TO ('2020-02-28');
+```
+Add a gin index if you'd like. For this example it isn't super necessary but for large datasets, it's a must. SO insert some data and query to see if all is as expected! 
+
+Partition Maintenance:
+We will want to do lots of things to our partitioned data, such as add a partition or delete a partition without resetting the whole thing. To add a new partition at any time we simply perform `CREATE TABLE part_tags_date_05_2020 PARTITION OF part_tags FOR VALUES FROM ('2020-05-01') TO ('2020-05-30');`
+
+To detach a partition, we can perform `ALTER TABLE part_tags DETACH PARTITION part_tags_date_05_2020 ;`
+
+To attach an already existing table to the parent table, keep in mind this may be rare and should align with the data structure in the parent table: `ALTER TABLE part_tags ATTACH PARTITION part_tags_already_exists FOR VALUES FROM ('1970-01-01') TO ('2019-12-31');`
+
+### Triggers and Rules
+I'm doing this a little out of order but that's ok. We can use server side programming techniques to perform actions for us on the DB side vs the client side.
+
+We can use functions and various languages to create server side programs and code! Pretty cool that we can use some languages like java and python in a postgresql server. Functions are defined as 
+```
+CREATE FUNCTION function_name(p1 type, p2 type,p3 type, ....., pn type)    function name and params here
+ RETURNS type AS                                                           specify the return the data type 
+BEGIN                                                                      
+ -- function logic                                                         Put our code here 
+END;
+LANGUAGE language_name                                                     define the language that was used
+```
+
+SQL fuctions are the easiest way to write functions in postgres and we can use any sql command inside them. An easy example to follow -> 
+```
+CREATE OR REPLACE FUNCTION my_sum(x integer, y integer) 
+RETURNS integer AS 
+$$
+ SELECT x + y;
+$ 
+LANGUAGE SQL;
+```
+The $$ can be considered lables, this is where the code is placed between. We can call this function with `select my_sum(1,2);`
+
+To return a list of elements we replace the return type as a `setof integer` using integer for example. But we can return a set of anything we want! Can a function return a table? Yes! Kinda weird tho... `returns table (ret_key integer,ret_title text) AS`
+
+We can go in depth with the PL/pgSQL language as well, but for now I'm just going to stick with my PL/SQL language as it serves my purpose right now. I'm sure I'll need it in the future! (PL/pgSQL can do all kinds of loops/exception handling/etc etc)
+
+
+So now we can talk about triggers and rules!
+- Rules are simple event handlers, they modify the flow of an event. "If we are given an event, what can we do when certain conditions occur"
+- To create a rule we follow the syntax `CREATE [ OR REPLACE ] RULE name AS ON event TO table [ WHERE condition ]  DO [ ALSO | INSTEAD ] { NOTHING | command | ( command ; command ... ) }`
+- Example! `create or replace rule r_tags1 
+                as on INSERT to tags 
+                where NEW.tag ilike 'a%' DO ALSO 
+                insert into a_tags(pk,tag,parent)values (NEW.pk,NEW.tag,NEW.parent);`
+               Everytime a record is inserted to tags where the new tag starts with the letter a, also insert the record into a_tags.
+- We can use the DO INSTEAD NOTHING and DO INSTEAD to perform actions instead of the original action provided it meets the requirements in the rule. 
+
+What's the difference between rules and triggers? Well rules will fire before the trigger, always. Also, with triggers it is possible to handle insert update and delete and truncate statements before the happen or after they have happened. The trigger syntax is:
+```
+CREATE [ CONSTRAINT ] TRIGGER name { BEFORE | AFTER | INSTEAD OF } { event [ OR ... ] }
+ ON table_name
+ [ FROM referenced_table_name ]
+ [ NOT DEFERRABLE | [ DEFERRABLE ] [ INITIALLY IMMEDIATE | INITIALLY DEFERRED ] ]
+ [ REFERENCING { { OLD | NEW } TABLE [ AS ] transition_relation_name } [ ... ] ]
+ [ FOR [ EACH ] { ROW | STATEMENT } ]
+ [ WHEN ( condition ) ]
+ EXECUTE { FUNCTION | PROCEDURE } function_name ( arguments )
+
+where event can be one of:
+
+ INSERT
+ UPDATE [ OF column_name [, ... ] ]
+ DELETE
+ TRUNCATE
+```
+
+Note that the trigger will call a function which must already be defined!
+
+Example of a trigger: `CREATE TRIGGER trigger_name BEFORE INSERT on table_name FOR EACH ROW EXECUTE PROCEDURE function_name.`
+
+Similar to our rule about inserts starting with a, we can use a trigger and a function:
+```
+The functon:
+CREATE OR REPLACE FUNCTION f_tags() RETURNS trigger as
+$$
+BEGIN
+ IF lower(substring(NEW.tag from 1 for 1)) = 'a' THEN
+ insert into a_tags(pk,tag,parent)values (NEW.pk,NEW.tag,NEW.parent);
+ END IF; 
+ RETURN NEW;
+END; 
+$$
+LANGUAGE 'plpgsql';
+
+And the trigger:
+CREATE TRIGGER t_tags BEFORE INSERT on new_tags FOR EACH ROW EXECUTE PROCEDURE f_tags();
+```
+Note how this will be executed BEFORE the insert. SO we can deal with our data before anything happens in the DB.
+
+Just to chew on in the future, here's an example of a more complex function and trigger: 
+```
+CREATE OR REPLACE FUNCTION f3_tags() RETURNS trigger as
+$$
+BEGIN
+ IF lower(substring(NEW.tag from 1 for 1)) = 'a' THEN
+     insert into a_tags(pk,tag,parent)values (NEW.pk,NEW.tag,NEW.parent);
+     RETURN NEW;
+ ELSIF lower(substring(NEW.tag from 1 for 1)) = 'b' THEN
+     insert into b_tags(pk,tag,parent)values (NEW.pk,NEW.tag,NEW.parent);
+     RETURN NULL;
+ ELSE
+     RETURN NEW;
+ END IF; 
+END; 
+$$
+LANGUAGE 'plpgsql';
+
+CREATE TRIGGER t3_tags BEFORE INSERT on new_tags FOR EACH ROW EXECUTE PROCEDURE f3_tags();
+```
+Something useful might be the TG_OP value, which stores the operation that is currently trying to be performed. Just like NEW and OLD hold the row data, PG_OP hold the operation. So we can check if the operation is as expected and handle different operations within one function!
+```
+CREATE OR REPLACE FUNCTION fcopy_tags() RETURNS trigger as
+$$
+BEGIN
+IF TG_OP = 'INSERT' THEN
+     IF lower(substring(NEW.tag from 1 for 1)) = 'a' THEN
+         insert into a_tags(pk,tag,parent)values (NEW.pk,NEW.tag,NEW.parent);
+     ELSIF lower(substring(NEW.tag from 1 for 1)) = 'b' THEN
+         insert into b_tags(pk,tag,parent)values (NEW.pk,NEW.tag,NEW.parent);
+     END IF;
+     RETURN NEW;
+ END IF;
+IF TG_OP = 'DELETE' THEN
+     IF lower(substring(OLD.tag from 1 for 1)) = 'a' THEN
+         DELETE FROM a_tags WHERE pk = OLD.pk;
+     ELSIF lower(substring(OLD.tag from 1 for 1)) = 'b' THEN
+         DELETE FROM b_tags WHERE pk = OLD.pk;
+     END IF;
+     RETURN OLD;
+END IF;
+IF TG_OP = 'UPDATE' THEN
+    IF (lower(substring(OLD.tag from 1 for 1)) in( 'a','b') ) THEN
+         DELETE FROM a_tags WHERE pk=OLD.pk;
+         DELETE FROM b_tags WHERE pk=OLD.pk;
+         DELETE FROM new_tags WHERE pk = OLD.pk;
+         INSERT into new_tags(pk,tag,parent) values (NEW.pk,NEW.tag,NEW.parent);
+     END IF;
+     RETURN NEW;
+END IF;
+END;
+$$
+LANGUAGE 'plpgsql';
+
+CREATE TRIGGER tcopy_tags_ins 
+    BEFORE INSERT on new_tags FOR EACH ROW EXECUTE PROCEDURE fcopy_tags();
+CREATE TRIGGER tcopy_tags_del 
+    AFTER DELETE on new_tags FOR EACH ROW EXECUTE PROCEDURE fcopy_tags();
+CREATE TRIGGER tcopy_tags_upd 
+    AFTER UPDATE on new_tags FOR EACH ROW EXECUTE PROCEDURE fcopy_tags();
+```
+This is long, but it is a complete example of how to properly configure a function and triggers, both before and after!
+
+There are also event triggers in postgresm which means that event triggers trigger on something changing the data but not the data layout or table properties. I'm not going to get into this right now, but the docs are out there!
+
