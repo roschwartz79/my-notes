@@ -27,4 +27,21 @@ As your deployments and data grows you'll want to have multiple clusters.
 
 With multiple datacenters, it is required for the data in each to be in both locations. Replication will not work outside of a single cluster, so a tool that is included with Kafka is called MirrorMaker is used for this purpose. It is basically a consumer and producer linked together with a queue. Messages are consumed from one cluster and produced to another and vice versa.
 
+You can also use multiple producers, to produce to the same topic or different topic. And you can have multiple consumers consuming from the same topic. Since it is disk based retention, a consumer can fall behind or even go offline without fear of losing messages. It will just pick up where it left off. Kafka is also extremely scalable so it canbe used with a wide variety of amounts of data. You can start with a single broker as a POC and then exapand to three brokers and then to hundreds if need be. Expansions can be performed while the cluster is online so there is no impact on the system. It also means that a cluster with multiple brokers can handle an impact where a broker would go down so kakfa can continue to serve it's clients. On top of all of this it is a high performance pub/sub system. Large scale message streams can be built with subsecond message latency from producer to subscriber. 
 
+### Inside the kakfa data ecosystem
+
+Kafka provides the cicrulatory system for data. It carries messages between the various members of the infrastructure so the interface is consistent for all clients of the system. This makes it easy to connect producers and consumers to the system because they are no longer tightly coupled with the system.
+
+### Use cases
+
+So we see how great Kfaka is, where is it a good idea to use kafka? 
+1. Activity Tracking
+2. Messaging
+3. Metrics and Logging
+4. Commit Log
+5. Stream Processing
+
+Kafka was created to address data pipeline issues. It is so flexible and powerful it can be used for so many different applications.
+
+## Kafka Producers
