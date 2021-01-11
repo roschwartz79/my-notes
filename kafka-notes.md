@@ -44,4 +44,71 @@ So we see how great Kfaka is, where is it a good idea to use kafka?
 
 Kafka was created to address data pipeline issues. It is so flexible and powerful it can be used for so many different applications.
 
+## Setting up Kafka
+
+To use Kafka we need a few things
+- Java: Kafka is a java application
+- Zookeeper: Kafka uses zookeeper to store metadata about the kafka cluster as well as consume client details. 
+
+Setting up Zookeeper is a process. See chapter 2 of the O'Reilly Book for more details. However, we need a Zookeeper instance running on port 2181 and a Kafka Broker running in order to get started. Once these are both up and running, we can test it out. 
+`/usr/local/kafka/bin/kafka-topics.sh --create --zookeeper localhost:2181 --replication-factor 1 --partitions 1 --topic test`
+
+and 
+
+`/usr/local/kafka/bin/kafka-topics.sh --zookeeper localhost:2181 --describe --topic test`
+
+We should be able to see that our topic is up and running now. We named it test, how fitting. There is also 1 partition... more on that later. Now lets produce a message to the test topic. 
+
+`/usr/local/kafka/bin/kafka-console-producer.sh --broker-list localhost:9092 --topic test`
+
+And... consume that message!
+
+`/usr/local/kafka/bin/kafka-console-consumer.sh --topic test --from-beginning --bootstrap-server localhost:9092`
+
+We can see our messages! Note that the --zookeeper flag has been replaced by --bootstrap-server. Woohoo! 
+
+### Broker Config
+
+There are lots of config params when we deploy kafka for any environment other than a standalone broker on a ingle server, which won't be the case everytime. The config options are:
+- Broker.ID: Every broker must have an int id, and it must be unique within each cluster. 
+- Port: The example config uses 9092, it can be set to any available port by changing this param.
+- Zookeeper.connect: The location or storing the broker metadata is set using this param 
+- Log.dirs Since kafka persists all messages to disk the log segments are stored in the directories specified in the log.dirs config.
+- Num.recovery.threads.per.data.dir: Kafka uses a configurable pool of threads for handling log segments. It is used when starting, after a failure and when shutting down. By default one thread per log dir is used, but this can be changed. You can parallelize operations and recover from an unclean shutdown much quicker. 
+- Auto.create.topics.enable: The default config spcifies the broker should automatically create a topic under the the circumstances when a producer starts writing to the topic, a consumer starts reading and when any client requests metadata. This might be undesireable though and can make topic creation explicit by setting this to false.
+
+There are topic defaults that are important that can be set on a topic by topic basis. 
+- Num.partitions: Default is 1
+  - How to choose the Num of partitions?
+    - What is the throughput
+    - What is the max throughput needed
+    - Adding partitions can sometimes be very tricky
+    - Avoid overestimating
+- Log.retention.ms: How long to retain messages in Millis. Default is 1 week (Similar to log.retention.minutes and log.retention.hours)
+- Log.retention.bytes: Another way to expire messages is based on the number of bytes contained. 
+- Log.segment.bytes: The size of each log segment. When this max is reached the segment is closed and a new log is opened. 
+- Log.segmet.ms: the amount of time until a log is closed and new one opened. 
+
+### Hardware selection
+
+This doesn't apply to me as much as it might others, but still cool stuff as an EE!
+
+The bottom line is that Kafka will run without issue on any system, until performance becomes an issue. Factors to take into account:
+- Disk throughout
+- Disk Capacity
+- Memory
+- Networking
+- CPU
+
+kafka can be used in the cloud, such as with AWS. Here you can pick all your parameters, data retention is a good place to start. In AWS... the m4 and r3 instance types are a common choice as m4 allows for greater retention periods and r3 will have better throughput but will limit the amount of data retained. 
+
+A single kafka server works great for local dev work or poc systems but there will be significant benefits to having multiple borkers configured as a cluster. An even bigger benefit is that you can scale the load across multiple servers. 
+
+Zookeeper stores metadata info about the brokers topics and partitions... and therefore we can have 1 zookeeper cluster for a single kafka cluster. There are lots of other concerns with getting kafka running for a production environment, but that is not applicable right now. A brief foundation of this info is good for now!
+
+
 ## Kafka Producers
+
+There is a native kafka client that ships with Kafka, and you can use many developed clients with lots of different programming languages. 
+
+To produce a message we start by creating a ProducerRecord. This ust include the Topic and Value and we optionally can add a partition and key specification. The first thing the producer will do is serialize the key and value objects to byte arrays to be sent over the network. Then the data is sent to the partitioner. If we specified a partition then the partitioner doesn't do anything and returns the partition we said. If we didn't then the partitioner will pick a partition and adds the record to the batch of recrods that will be sent to the topic and partition. When the broker receives the messages it sends a response back- if successful it return a RecordMetadata object with the topic partition and offset of the record in the partition it was written to. If it failed it will return an error message, it may retry to send the message before giving up. 
