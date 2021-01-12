@@ -112,3 +112,28 @@ Zookeeper stores metadata info about the brokers topics and partitions... and th
 There is a native kafka client that ships with Kafka, and you can use many developed clients with lots of different programming languages. 
 
 To produce a message we start by creating a ProducerRecord. This ust include the Topic and Value and we optionally can add a partition and key specification. The first thing the producer will do is serialize the key and value objects to byte arrays to be sent over the network. Then the data is sent to the partitioner. If we specified a partition then the partitioner doesn't do anything and returns the partition we said. If we didn't then the partitioner will pick a partition and adds the record to the batch of recrods that will be sent to the topic and partition. When the broker receives the messages it sends a response back- if successful it return a RecordMetadata object with the topic partition and offset of the record in the partition it was written to. If it failed it will return an error message, it may retry to send the message before giving up. 
+
+There are 3 solid ways to send a message:
+1. Fire and Forget
+2. Synchronous (We wait until we know it succeeded)
+3. Asychronous (We don't need to wait to succeed but will callback if it failed)
+
+These ways are shown in my kafka-playground. 
+
+### Configuring Producers 
+
+There are lots of config params and most are documented but the significant ones, I'll write down here.
+- acks: controls how many partition replicas must receive the record before the producer can consider the write successful. acks can be 0, 1 or all. 0 means the producer won't wait for a reply from the broker, so we won't know if a message fails but this makes for high throughput. 1 means the producer gets a successful response when the leader replica recieved the message. All means that the producer receives a successful response when all in sync replicas have received the message. The most safe way to handle data but latency will be high.
+- Buffer.memory: The amount of memory the producer will use to buffer messages waiting to be sent to brokers.
+- Compression.type: By default messages are not compresssed but we can set it to snappy, gzip or lz4 where the compression algorithms will be applied before it's sent to the brokers. 
+- Retries: How many times the producer will attempt to retry the sending of a message before giving up. Not all errors will be retried.
+- Batch.size: The amount of memory in bytes that will be used for each batch, when the batch is full the messages get sent. This doesn't mean that messages only get sent when batches are full though. 
+- Linger.ms amount of time to wait for additional messages before sending current batch. Default is 0 (e.g. not waiting)
+- client.id: Any string that identifies messages sent from the client. 
+- in.flight.request.per.session: When set to 1, if the first batch fails, the second batch will not go until the first batch is succesful. If the second batch went when the first failed that could reverse the order!
+
+There are lots of others so check the docs!
+
+### Serializers
+
+The built in serializers work great, but we may need more. There are lots of good general serializers, or we can write our own!
