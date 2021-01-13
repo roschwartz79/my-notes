@@ -137,3 +137,13 @@ There are lots of others so check the docs!
 ### Serializers
 
 The built in serializers work great, but we may need more. There are lots of good general serializers, or we can write our own!
+
+There can be lots of issues with writing our own serializers, so it is usually best to use a general serializer if we can get away with it. One of the serializers we can use is Apache Avro. The cool part about avro is that when the application writing messages changes schemas the applications reading the data can continue processing messages without any changes. If the reader tries to deserialize a key that is no longer present in the schema it will simply return as null instead of breaking. However:
+- The schema used for writing the data and the schema expected by the reader must be compatible. 
+- The deserializer will need access to the schema that was used when writing the data even when it is different than the schema expected by the application that accesses the data. 
+
+We need to access the schema from the reader, we do this in a schema registry, which is not part of Kafka but there are lots of options for this. Then we can store all of the schemas ever used with a schema id in the schema registry and send messages through kafka with the schema id, so the deserializer can deserialize the messages with the correct schema from the registry.
+
+We can also send generic Avro objects rather than the generated ones, but it requires some more work. 
+
+### Partitions
