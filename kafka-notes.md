@@ -147,3 +147,20 @@ We need to access the schema from the reader, we do this in a schema registry, w
 We can also send generic Avro objects rather than the generated ones, but it requires some more work. 
 
 ### Partitions
+
+Each topic we create will have a number of partitions. Each partition contains different data, in order to maximize throughput on our topics. Some key features to take away with the concept of Partitions:
+- The key of a Record is used to determine what partition a record goes to, the default Kafka uses is a hash of the key. So we can specify what partition our Record ends up going to.
+- We can create partitions for specific keys to go to in order to create a partition on a topic that only contains 1 type of Record.
+- So you can use the default partitioner that ships with Kafka or you can write your own if you need that added functionality.
+
+## Consumers
+
+THe first concept to understand is a consumer group, a consumer group is a group of consumers that subscribe to a topic. A good way to think about this is to give each application you have it's own consumer group, this way multiple apps can subscribe to a topic. This is a key benefit for using kafka, we can have many applications consuming off of a topic. 
+
+A cool feature about Consumers is rebalancing. If a consumer goes down, the consumer group will redistribute all of the partitions that the broken consumer was consuming from to working consumers as to not stop the application. This also allows us to scale our consumer groups during runtime, only small delays in consuming data will occur from this. The consumer group will continuously send heartbeat messages to the lead broker (more on this later) letting the broker know all is good. If the heartbeat messages stop, the broker will issue a redistribute command in order to try and get the consumer group up and running. In newer versions of Kafka, the heartbeat messages have become decoupled from the frequency of polling for new messages, so issues with a consumer group can be detected earlier. The first consumer to join a group is dubbed as the leader, and is responsible for assigning partitions to all other consumers that are apart of the group. 
+
+We create consumers in Java in a very similar way to the way we create producers- we need a bootstrap server address, a group id (technically optional) and deserializers. Then we just subscribe to the topics we want to subscribe to using the built in .subscribe(List of topics) method! I'll be implementing this in the kafkaPlayground repo I have. 
+
+*The poll loop*
+
+The poll loop is a loop that is key to the API... this handles looking if there is new data on the topic/server, rebalancing, heartbeats, fetching data, and all it returns is the data that we care about so all of the underlying work is abstracted for us. Consumers must continue to poll from the broker or else they are going to be considered dead, and the partitions they consume from are going to be handed off to other consumers. From a record we can get the partition, offset, topic and the key and value of the Record, all of which can be useful! You will always want to close your consumers connection with the broker manually instead of letting the consumer timeout and die, which takes longer to rebalance rather than if you just closed it manually. There are nice ways to do this that will be shown in the playground. Note that you only want 1 consumer per thread in your application, otherwise it will get slow and can cause many issues. There are examples on how to create a multi threaded application with multiple consumers that are thread safe!
